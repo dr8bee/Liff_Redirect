@@ -4,57 +4,85 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>前往付款</title>
-<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <style>
   body {
     font-family: sans-serif;
     text-align: center;
-    padding-top: 3rem;
+    padding: 3rem 1.5rem;
     color: #333;
   }
-  a.fallback {
-    display: none;
-    margin-top: 1rem;
-    color: #06C755;
+  a.pay-link {
+    display: inline-block;
+    margin-top: 1.5rem;
+    padding: 0.9rem 2rem;
+    background: #06C755;
+    color: #fff;
+    text-decoration: none;
+    border-radius: 8px;
     font-weight: bold;
+    font-size: 1.1rem;
+  }
+  #err {
+    margin-top: 1rem;
+    color: #999;
+    font-size: 0.85rem;
   }
 </style>
 </head>
 <body>
-  <!-- 跟 liff-redirect/index.html 一樣，這裡要填入你自己的 LIFF ID -->
   <p id="msg">正在為您導向付款頁面...</p>
-  <a id="fallback-link" class="fallback" href="#">若沒有自動跳轉，請點此前往付款</a>
+
+  <!-- 這個連結一開始就顯示、隨時可以點，不依賴任何 JS 是否成功執行，
+       是最後的保底方案：就算 LIFF SDK 完全載入失敗，使用者也有辦法繼續結帳。 -->
+  <a id="pay-link" class="pay-link" href="#">前往 LINE Pay 付款</a>
+  <p id="err"></p>
 
   <script>
-    // ↓↓↓ 跟 liff-redirect/index.html 用同一組 LIFF_ID，改成你自己的 ↓↓↓
-    var LIFF_ID = "2011607654-OAHnsnbi";
+    // ↓↓↓ 跟 index.html 用同一組 LIFF_ID，改成你自己的 ↓↓↓
+    var LIFF_ID = "填入你的 LIFF_ID";
 
     var params = new URLSearchParams(window.location.search);
     var targetUrl = params.get("url");
     var msgEl = document.getElementById("msg");
-    var fallbackEl = document.getElementById("fallback-link");
-
-    function showFallback(text) {
-      msgEl.textContent = text || "請點下方連結前往付款：";
-      fallbackEl.href = targetUrl;
-      fallbackEl.style.display = "inline-block";
-    }
+    var linkEl = document.getElementById("pay-link");
+    var errEl = document.getElementById("err");
 
     if (!targetUrl) {
       msgEl.textContent = "缺少付款網址參數，請從商店頁面重新結帳。";
+      linkEl.style.display = "none";
     } else {
-      liff.init({ liffId: LIFF_ID }).then(function () {
-        // 這裡必須是最外層頁面（不能被包在 iframe 裡），
-        // liff.openWindow 的 external:true 才能正確跳出到手機系統瀏覽器。
-        liff.openWindow({ url: targetUrl, external: true });
-        // openWindow 呼叫後畫面通常還會留在這裡，順便顯示備用連結，
-        // 避免使用者的裝置沒有自動跳轉時卡住不知道要做什麼。
-        showFallback();
-      }).catch(function () {
-        // 不是在 LINE 環境裡打開（例如直接用一般瀏覽器測試），
-        // 沒有 LIFF 橋接可用，直接同頁跳轉即可。
-        window.location.href = targetUrl;
-      });
+      // 保底：連結一開始就可以點，不管下面的自動跳轉邏輯成不成功
+      linkEl.href = targetUrl;
+
+      try {
+        var sdkScript = document.createElement("script");
+        sdkScript.src = "https://static.line-scdn.net/liff/edge/2/sdk.js";
+        sdkScript.onload = function () {
+          try {
+            if (typeof liff === "undefined") {
+              throw new Error("liff SDK 未定義");
+            }
+            liff.init({ liffId: LIFF_ID }).then(function () {
+              liff.openWindow({ url: targetUrl, external: true });
+              msgEl.textContent = "若沒有自動跳轉，請點下方按鈕：";
+            }).catch(function (e) {
+              errEl.textContent = "自動跳轉未生效（" + e + "），請點下方按鈕繼續付款。";
+              msgEl.textContent = "請點下方按鈕：";
+            });
+          } catch (e) {
+            errEl.textContent = "自動跳轉未生效（" + e + "），請點下方按鈕繼續付款。";
+            msgEl.textContent = "請點下方按鈕：";
+          }
+        };
+        sdkScript.onerror = function () {
+          errEl.textContent = "LIFF SDK 載入失敗，請點下方按鈕繼續付款。";
+          msgEl.textContent = "請點下方按鈕：";
+        };
+        document.head.appendChild(sdkScript);
+      } catch (e) {
+        errEl.textContent = "發生錯誤（" + e + "），請點下方按鈕繼續付款。";
+        msgEl.textContent = "請點下方按鈕：";
+      }
     }
   </script>
 </body>
